@@ -1,0 +1,40 @@
+name: CD
+
+on:
+  push:
+    branches: main
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      matrix:
+        ips: [10.0.2.92, 10.0.2.93]
+    steps:
+      - name: Create SSH key file
+        run: |
+          mkdir -p ~/.ssh &&
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/temp_key &&
+          chmod 600 ~/.ssh/temp_key
+
+      - name: Add SSH Host to Known Hosts
+        run: |
+          ssh-keyscan -H ${{ matrix.ips }} >> ~/.ssh/known_hosts
+
+      - name: Pull and run new build
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/temp_key ${{ secrets.SSH_USERNAME }}@${{ matrix.ips }} "
+          docker kill web
+          docker run -d --rm  \
+          --env-file /.env \
+          -p 80:5000 \
+          --name web \
+          devabdullahq/flask-app-ci:latest"
+
+#   docker stop $(docker ps -q)
+#   docker rm -f $(docker ps -aq)
